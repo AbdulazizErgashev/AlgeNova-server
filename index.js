@@ -28,6 +28,10 @@ app.get("/", (req, res) => {
   res.send("AlgeNova API is running...");
 });
 
+app.get("/ping", (req, res) => {
+  res.status(200).send("pong");
+});
+
 app.listen(PORT, () => {
   console.log(`Server is runnning on http://192.168.1.86:${PORT}`);
 });
