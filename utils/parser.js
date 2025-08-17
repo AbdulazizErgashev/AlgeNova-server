@@ -3,60 +3,126 @@ import nlp from "compromise";
 export const parseInput = (input) => {
   if (!input || typeof input !== "string") return "";
 
-  // Boshlang'ich tozalash
-  let cleaned = input.trim().toLowerCase();
+  let cleaned = input.trim();
 
-  // Matematik so'zlarni belgilar bilan almashtirish
+  // 1️⃣ Avval son so‘zlarini raqamga aylantirish
+  const doc = nlp(cleaned.toLowerCase());
+  const numberTerms = doc.numbers().out("array"); // ["twelve", "three hundred"]
+  const numberValues = doc.numbers().toNumber().out("array"); // [12, 300]
+
+  numberTerms.forEach((term, i) => {
+    // faqat butun so‘z bo‘lsa almashtiramiz
+    const regex = new RegExp(`\\b${term}\\b`, "gi");
+    cleaned = cleaned.replace(regex, numberValues[i]);
+  });
+
+  // 2️⃣ Matematik notation va symbolarni qayta ishlash
   cleaned = cleaned
-    .replace(/\bplus\b/g, "+")
-    .replace(/\badd\b/g, "+")
-    .replace(/\bsum\b/g, "+")
-    .replace(/\bminus\b/g, "-")
-    .replace(/\bsubtract\b/g, "-")
-    .replace(/\bdifference of\b/g, "-")
-    .replace(/\btimes\b/g, "*")
-    .replace(/\bmultiplied by\b/g, "*")
-    .replace(/\bproduct of\b/g, "*")
-    .replace(/\bover\b/g, "/")
-    .replace(/\bdivided by\b/g, "/")
-    .replace(/\bdivide\b/g, "/")
-    .replace(/\bquotient of\b/g, "/")
-    .replace(/\bequals\b/g, "=")
-    .replace(/\bis\b/g, "=")
-    .replace(/\b(and|the)\b/g, ""); // 'of' ni o'chirmaymiz, chunki 'product of' kerak bo'lishi mumkin
+    // Basic operations
+    .replace(/\bplus\b/gi, "+")
+    .replace(/\badd\b/gi, "+")
+    .replace(/\bsum\b/gi, "+")
+    .replace(/\bminus\b/gi, "-")
+    .replace(/\bsubtract\b/gi, "-")
+    .replace(/\btimes\b/gi, "*")
+    .replace(/\bmultiplied by\b/gi, "*")
+    .replace(/\bproduct of\b/gi, "*")
+    .replace(/\bdivided by\b/gi, "/")
+    .replace(/\bover\b/gi, "/")
+    .replace(/\bequals\b/gi, "=")
+    .replace(/\bis equal to\b/gi, "=")
 
-  // maxsus formatlar
-  const fromMatch = cleaned.match(/subtract (\d+) from (\d+)/);
-  if (fromMatch) return `${fromMatch[2]} - ${fromMatch[1]}`;
+    // Powers and roots
+    .replace(/\bsquared\b/gi, "^2")
+    .replace(/\bcubed\b/gi, "^3")
+    .replace(/\bto the power of\b/gi, "^")
+    .replace(/\bsquare root of\b/gi, "sqrt(")
+    .replace(/\bsqrt\b/gi, "sqrt")
 
-  const sumMatch = cleaned.match(/sum (\d+) (\d+)/);
-  if (sumMatch) return `${sumMatch[1]} + ${sumMatch[2]}`;
+    // Trigonometric functions
+    .replace(/\bsine\b/gi, "sin")
+    .replace(/\bcosine\b/gi, "cos")
+    .replace(/\btangent\b/gi, "tan")
 
-  const productMatch = cleaned.match(/product (\d+) (\d+)/);
-  if (productMatch) return `${productMatch[1]} * ${productMatch[2]}`;
+    // Logarithms
+    .replace(/\blogarihtm\b/gi, "log")
+    .replace(/\bnatural log\b/gi, "ln")
+    .replace(/\bln\b/gi, "ln")
 
-  const quotientMatch = cleaned.match(/quotient (\d+) (\d+)/);
-  if (quotientMatch) return `${quotientMatch[1]} / ${quotientMatch[2]}`;
+    // Derivatives
+    .replace(/\bderivative of\b/gi, "d/dx(")
+    .replace(/\bd\/dx\b/gi, "d/dx")
 
-  // NLP orqali sonlarni olish
-  const doc = nlp(cleaned);
-  const numbers = doc.numbers().toNumber().out("array");
+    // Clean up extra spaces
+    .replace(/\s+/g, " ")
+    .trim();
 
-  // Operatorlarni aniqlash
-  const operators = ["+", "-", "*", "/", "="];
-  let detectedOperator = null;
-  for (let op of operators) {
-    if (cleaned.includes(` ${op} `) || cleaned.startsWith(op) || cleaned.endsWith(op)) {
-      detectedOperator = op;
+  // 3️⃣ Maxsus patternlar
+  const patterns = [
+    {
+      regex: /subtract\s+([^from]+)\s+from\s+(.+)/gi,
+      replacement: (match, p1, p2) => `${p2.trim()} - ${p1.trim()}`,
+    },
+    {
+      regex: /(\d+(?:\.\d+)?)\s*percent\s+of\s+(.+)/gi,
+      replacement: (match, p1, p2) => `${p1}/100 * ${p2.trim()}`,
+    },
+    {
+      regex: /solve\s+for\s+\w+:?\s*/gi,
+      replacement: "",
+    },
+  ];
+
+  patterns.forEach((pattern) => {
+    cleaned = cleaned.replace(pattern.regex, pattern.replacement);
+  });
+
+  // 4️⃣ Funksiya argumentlariga qavs qo‘shish
+  const functions = ["sin", "cos", "tan", "log", "ln", "sqrt", "abs"];
+  functions.forEach((func) => {
+    const regex = new RegExp(`\\b${func}\\s+([^\\s\\(]+)`, "gi");
+    cleaned = cleaned.replace(regex, `${func}($1)`);
+  });
+
+  // 5️⃣ Implicit multiplication
+  cleaned = cleaned.replace(/(\d)([a-zA-Z])/g, "$1*$2");
+  cleaned = cleaned.replace(/([a-zA-Z])(\d)/g, "$1*$2");
+  cleaned = cleaned.replace(/\)(\d|[a-zA-Z])/g, ")*$1");
+  cleaned = cleaned.replace(/(\d|[a-zA-Z])\(/g, "$1*(");
+
+  return cleaned;
+};
+
+export const validateMathExpression = (expression) => {
+  const errors = [];
+
+  // Check for balanced parentheses
+  let parenCount = 0;
+  for (const char of expression) {
+    if (char === "(") parenCount++;
+    if (char === ")") parenCount--;
+    if (parenCount < 0) {
+      errors.push("Unmatched closing parenthesis");
       break;
     }
   }
-
-  // Agar ikki son va operator aniq bo'lsa
-  if (numbers.length === 2 && detectedOperator) {
-    return `${numbers[0]} ${detectedOperator} ${numbers[1]}`;
+  if (parenCount > 0) {
+    errors.push("Unmatched opening parenthesis");
   }
 
-  // Faqat ruxsat etilgan belgilar qoldiriladi
-  return cleaned.replace(/[^0-9+\-*/(). ]/g, "");
+  // Check for invalid characters
+  const validChars = /^[0-9a-zA-Z+\-*/^()=.,\s]+$/;
+  if (!validChars.test(expression)) {
+    errors.push("Contains invalid characters");
+  }
+
+  // Check for consecutive operators
+  if (/[+\-*/^]{2,}/.test(expression)) {
+    errors.push("Consecutive operators found");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors: errors,
+  };
 };
