@@ -11,8 +11,9 @@ export const parseInput = (input) => {
   const numberValues = doc.numbers().toNumber().out("array"); // [12, 300]
 
   numberTerms.forEach((term, i) => {
-    // faqat butun so‘z bo‘lsa almashtiramiz
-    const regex = new RegExp(`\\b${term}\\b`, "gi");
+    // Escape special regex characters
+    const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escapedTerm, "gi"); // \b olib tashlandi
     cleaned = cleaned.replace(regex, numberValues[i]);
   });
 
@@ -37,7 +38,7 @@ export const parseInput = (input) => {
     .replace(/\bcubed\b/gi, "^3")
     .replace(/\bto the power of\b/gi, "^")
     .replace(/\bsquare root of\b/gi, "sqrt(")
-    .replace(/\bsqrt\b/gi, "sqrt")
+    .replace(/\bsqrt\s*\(/gi, "sqrt(") // 'sqrt (' ni 'sqrt(' ga almashtirish
 
     // Trigonometric functions
     .replace(/\bsine\b/gi, "sin")
@@ -53,7 +54,7 @@ export const parseInput = (input) => {
     .replace(/\bderivative of\b/gi, "d/dx(")
     .replace(/\bd\/dx\b/gi, "d/dx")
 
-    // Clean up extra spaces
+    // Remove extra spaces
     .replace(/\s+/g, " ")
     .trim();
 
@@ -65,7 +66,7 @@ export const parseInput = (input) => {
     },
     {
       regex: /(\d+(?:\.\d+)?)\s*percent\s+of\s+(.+)/gi,
-      replacement: (match, p1, p2) => `${p1}/100 * ${p2.trim()}`,
+      replacement: (match, p1, p2) => `${p1}/100*${p2.trim()}`,
     },
     {
       regex: /solve\s+for\s+\w+:?\s*/gi,
@@ -80,7 +81,7 @@ export const parseInput = (input) => {
   // 4️⃣ Funksiya argumentlariga qavs qo‘shish
   const functions = ["sin", "cos", "tan", "log", "ln", "sqrt", "abs"];
   functions.forEach((func) => {
-    const regex = new RegExp(`\\b${func}\\s+([^\\s\\(]+)`, "gi");
+    const regex = new RegExp(`${func}\\s+([^\\s\\(]+)`, "gi");
     cleaned = cleaned.replace(regex, `${func}($1)`);
   });
 
@@ -89,6 +90,9 @@ export const parseInput = (input) => {
   cleaned = cleaned.replace(/([a-zA-Z])(\d)/g, "$1*$2");
   cleaned = cleaned.replace(/\)(\d|[a-zA-Z])/g, ")*$1");
   cleaned = cleaned.replace(/(\d|[a-zA-Z])\(/g, "$1*(");
+
+  // 6️⃣ Remove spaces around operators (mathjs / nerdamer friendly)
+  cleaned = cleaned.replace(/\s*([\+\-\*\/\^=])\s*/g, "$1");
 
   return cleaned;
 };
@@ -111,7 +115,7 @@ export const validateMathExpression = (expression) => {
   }
 
   // Check for invalid characters
-  const validChars = /^[0-9a-zA-Z+\-*/^()=.,\s]+$/;
+  const validChars = /^[0-9a-zA-Z+\-*/^()=.,]+$/;
   if (!validChars.test(expression)) {
     errors.push("Contains invalid characters");
   }
