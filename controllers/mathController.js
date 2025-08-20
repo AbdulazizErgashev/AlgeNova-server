@@ -41,7 +41,11 @@ export const solveMathProblem = async (req, res) => {
  */
 const generateStepByStepSolution = async (formula) => {
   const originalFormula = formula;
-  const parsed = parseInput(formula); // normalize input
+
+  // normalize input (sqrt*, ^, va boshqalarni tuzatamiz)
+  const parsed = parseInput(formula)
+    .replace(/sqrt\*/g, "sqrt") // noto‘g‘ri sqrt* ni tuzatish
+    .replace(/√\(/g, "sqrt("); // √ belgisi bo‘lsa, sqrt() ga aylantirish
 
   let solution = {
     originalFormula,
@@ -112,7 +116,6 @@ const solveEquation = async (formula, solution) => {
       `solve(${leftSide}-(${rightSide}), x)`
     ).toString();
 
-    // string bo‘lsa, arrayga aylantiramiz
     const answers = nerdSolution
       .replace(/^\[|\]$/g, "")
       .split(",")
@@ -228,7 +231,7 @@ const solveDerivative = async (formula, solution) => {
 };
 
 /**
- * Integral solver (basic)
+ * Integral solver
  */
 const solveIntegral = async (formula, solution) => {
   solution.explanation =
@@ -257,22 +260,25 @@ const solveIntegral = async (formula, solution) => {
 };
 
 /**
- * Equation solution verification
+ * Verification for equation solutions
  */
 const verifyEquationSolution = (leftSide, rightSide, solutions) => {
   const verifications = [];
 
-  if (!Array.isArray(solutions)) {
-    solutions = [solutions];
-  }
+  if (!Array.isArray(solutions)) solutions = [solutions];
 
   solutions.forEach((sol) => {
     try {
-      const leftResult = math.evaluate(leftSide.replace(/x/g, `(${sol})`));
-      const rightResult = math.evaluate(rightSide.replace(/x/g, `(${sol})`));
+      // faqat raqamni ajratib olish (x= qismidan keyin)
+      const cleanSol = sol.replace(/^x\s*=\s*/, "");
+
+      const leftResult = math.evaluate(leftSide.replace(/x/g, `(${cleanSol})`));
+      const rightResult = math.evaluate(
+        rightSide.replace(/x/g, `(${cleanSol})`)
+      );
 
       verifications.push({
-        solution: `x = ${sol}`,
+        solution: `x = ${cleanSol}`,
         leftSide: `${leftSide} → ${leftResult}`,
         rightSide: `${rightSide} → ${rightResult}`,
         isCorrect: Math.abs(leftResult - rightResult) < 1e-10,
