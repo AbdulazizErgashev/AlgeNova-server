@@ -1,8 +1,17 @@
-import { evaluate, parse, simplify, derivative } from "mathjs";
+// controllers/mathController.js
+import { create, all, parse, simplify } from "mathjs";
+import nerdamer from "nerdamer";
+import "nerdamer/Solve.js";
+import "nerdamer/Algebra.js";
+import "nerdamer/Calculus.js";
+import "nerdamer/Extra.js";
+
 import { parseInput } from "../utils/parser.js";
 
+const math = create(all);
+
 /**
- * Controller: Solve Math Problem
+ * Main Controller: Solve Math Problem
  */
 export const solveMathProblem = async (req, res) => {
   const { formula } = req.body || {};
@@ -71,7 +80,10 @@ const determineFormulaType = (formula) => {
     return "equation";
   } else if (formula.includes("d/dx") || formula.includes("'")) {
     return "derivative";
-  } else if (formula.includes("∫") || formula.includes("integral")) {
+  } else if (
+    formula.includes("∫") ||
+    formula.toLowerCase().includes("integral")
+  ) {
     return "integral";
   } else {
     return "expression";
@@ -83,10 +95,10 @@ const determineFormulaType = (formula) => {
  */
 const solveEquation = async (formula, solution) => {
   solution.explanation =
-    "This is an algebraic equation. I will solve for the unknown variable by isolating it on one side.";
+    "This is an algebraic or transcendental equation. I will solve for the unknown variable by isolating it on one side.";
 
   try {
-    const [leftSide, rightSide] = formula.split("=").map((side) => side.trim());
+    const [leftSide, rightSide] = formula.split("=").map((s) => s.trim());
 
     solution.steps.push({
       step: 1,
@@ -95,51 +107,33 @@ const solveEquation = async (formula, solution) => {
       explanation: "Starting with the given equation.",
     });
 
-    const expr = parse(formula.replace("=", "-(") + ")");
-    const simplified = simplify(expr);
+    // nerdamer bilan yechish
+    const nerdSolution = nerdamer(
+      `solve(${leftSide}-(${rightSide}), x)`
+    ).toString();
+
+    // string bo‘lsa, arrayga aylantiramiz
+    const answers = nerdSolution
+      .replace(/^\[|\]$/g, "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    solution.finalAnswer = answers.map((a) => `x = ${a}`);
 
     solution.steps.push({
       step: 2,
-      description: "Rearrange equation",
-      expression: `${simplified.toString()} = 0`,
-      explanation:
-        "Moving all terms to one side to set the equation equal to zero.",
+      description: "Solved equation",
+      expression: solution.finalAnswer.join(" or "),
+      explanation: "Isolated the variable using algebraic rules.",
     });
 
-    if (isLinearEquation(leftSide, rightSide)) {
-      const linearSolution = solveLinearEquation(
-        leftSide,
-        rightSide,
-        solution.steps.length
-      );
-      solution.steps.push(...linearSolution.steps);
-      solution.finalAnswer = linearSolution.answer;
-    } else {
-      try {
-        const result = evaluate(`solve(${formula}, x)`);
-        solution.finalAnswer = Array.isArray(result) ? result : [result];
-
-        solution.steps.push({
-          step: solution.steps.length + 1,
-          description: "Solution",
-          expression: `x = ${solution.finalAnswer.join(" or x = ")}`,
-          explanation: "Using algebraic methods to find the solution(s).",
-        });
-      } catch (e) {
-        solution.finalAnswer = "Unable to solve automatically";
-      }
-    }
-
-    if (
-      solution.finalAnswer &&
-      solution.finalAnswer !== "Unable to solve automatically"
-    ) {
-      solution.verification = verifyEquationSolution(
-        leftSide,
-        rightSide,
-        solution.finalAnswer
-      );
-    }
+    // verify
+    solution.verification = verifyEquationSolution(
+      leftSide,
+      rightSide,
+      answers
+    );
   } catch (error) {
     solution.steps.push({
       step: 1,
@@ -151,78 +145,6 @@ const solveEquation = async (formula, solution) => {
   }
 
   return solution;
-};
-
-/**
- * Linear equation helper
- */
-const solveLinearEquation = (leftSide, rightSide, startStep) => {
-  const steps = [];
-  let currentStep = startStep + 1;
-
-  const leftMatch = leftSide.match(/(-?\d*)\s*\*?\s*x\s*([+-]\s*\d+)?/);
-  const rightValue = evaluate(rightSide);
-
-  if (leftMatch) {
-    const coefficient =
-      leftMatch[1] === ""
-        ? 1
-        : leftMatch[1] === "-"
-        ? -1
-        : Number.parseFloat(leftMatch[1]);
-    const constant = leftMatch[2] ? evaluate(leftMatch[2]) : 0;
-
-    if (constant !== 0) {
-      steps.push({
-        step: currentStep++,
-        description: "Subtract constant from both sides",
-        expression: `${coefficient}x = ${rightValue} - (${constant})`,
-        explanation: `Subtracting ${constant} from both sides to isolate the x term.`,
-      });
-
-      steps.push({
-        step: currentStep++,
-        description: "Simplify right side",
-        expression: `${coefficient}x = ${rightValue - constant}`,
-        explanation: "Performing the arithmetic on the right side.",
-      });
-    }
-
-    const answer = (rightValue - constant) / coefficient;
-
-    steps.push({
-      step: currentStep++,
-      description: "Divide both sides by coefficient",
-      expression: `x = ${rightValue - constant} / ${coefficient}`,
-      explanation: `Dividing both sides by ${coefficient} to solve for x.`,
-    });
-
-    steps.push({
-      step: currentStep++,
-      description: "Final answer",
-      expression: `x = ${answer}`,
-      explanation: "This is our solution.",
-    });
-
-    return { steps, answer: [answer] };
-  }
-
-  return { steps: [], answer: "Unable to solve" };
-};
-
-/**
- * Linear equation check
- */
-const isLinearEquation = (leftSide, rightSide) => {
-  const combined = leftSide + rightSide;
-  return (
-    !combined.includes("x^") &&
-    !combined.includes("x*x") &&
-    !combined.includes("sin") &&
-    !combined.includes("cos") &&
-    !combined.includes("tan") &&
-    !combined.includes("log")
-  );
 };
 
 /**
@@ -252,7 +174,7 @@ const evaluateExpression = async (formula, solution) => {
       });
     }
 
-    const result = evaluate(formula);
+    const result = math.evaluate(formula);
     solution.finalAnswer = result;
 
     solution.steps.push({
@@ -277,9 +199,10 @@ const solveDerivative = async (formula, solution) => {
     "This is a derivative problem. I will find the derivative using differentiation rules.";
 
   try {
-    let func = formula.replace(/d\/dx\s*\$\$?/, "").replace(/\$\$?$/, "");
-    func = func.replace(/'/g, "");
-
+    let func = formula
+      .replace(/d\/dx\s*/, "")
+      .trim()
+      .replace(/'/g, "");
     solution.steps.push({
       step: 1,
       description: "Original function",
@@ -287,17 +210,16 @@ const solveDerivative = async (formula, solution) => {
       explanation: "Identifying the function to differentiate.",
     });
 
-    const expr = parse(func);
-    const deriv = derivative(expr, "x");
+    const deriv = nerdamer(`diff(${func}, x)`).toString();
 
     solution.steps.push({
       step: 2,
       description: "Apply differentiation rules",
-      expression: `f'(x) = ${deriv.toString()}`,
+      expression: `f'(x) = ${deriv}`,
       explanation: "Using calculus differentiation rules.",
     });
 
-    solution.finalAnswer = deriv.toString();
+    solution.finalAnswer = deriv;
   } catch (error) {
     throw new Error(error.message);
   }
@@ -306,21 +228,31 @@ const solveDerivative = async (formula, solution) => {
 };
 
 /**
- * Integral solver (placeholder)
+ * Integral solver (basic)
  */
 const solveIntegral = async (formula, solution) => {
   solution.explanation =
     "This is an integration problem. I will find the antiderivative.";
 
-  solution.steps.push({
-    step: 1,
-    description: "Integration problem",
-    expression: formula,
-    explanation:
-      "Finding the antiderivative requires advanced symbolic computation.",
-  });
+  try {
+    let func = formula
+      .replace(/∫/, "")
+      .replace(/integral/i, "")
+      .trim();
+    const integral = nerdamer(`integrate(${func}, x)`).toString();
 
-  solution.finalAnswer = "Integration requires advanced symbolic computation";
+    solution.steps.push({
+      step: 1,
+      description: "Integration",
+      expression: `∫ ${func} dx = ${integral} + C`,
+      explanation: "Finding the antiderivative symbolically.",
+    });
+
+    solution.finalAnswer = `${integral} + C`;
+  } catch (error) {
+    solution.finalAnswer = "Integration failed";
+  }
+
   return solution;
 };
 
@@ -336,13 +268,13 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
 
   solutions.forEach((sol) => {
     try {
-      const leftResult = evaluate(leftSide.replace(/x/g, `(${sol})`));
-      const rightResult = evaluate(rightSide.replace(/x/g, `(${sol})`));
+      const leftResult = math.evaluate(leftSide.replace(/x/g, `(${sol})`));
+      const rightResult = math.evaluate(rightSide.replace(/x/g, `(${sol})`));
 
       verifications.push({
         solution: `x = ${sol}`,
-        leftSide: `${leftSide.replace(/x/g, `(${sol})`)} = ${leftResult}`,
-        rightSide: `${rightSide.replace(/x/g, `(${sol})`)} = ${rightResult}`,
+        leftSide: `${leftSide} → ${leftResult}`,
+        rightSide: `${rightSide} → ${rightResult}`,
         isCorrect: Math.abs(leftResult - rightResult) < 1e-10,
       });
     } catch (error) {
@@ -362,23 +294,21 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
 export const getMathHelp = async (req, res) => {
   const helpInfo = {
     supportedOperations: [
-      "Linear equations (e.g., 2x + 5 = 13)",
-      "Quadratic equations (e.g., x^2 - 4x + 3 = 0)",
-      "Polynomial expressions (e.g., x^3 + 2x^2 - x + 1)",
-      "Basic derivatives (e.g., d/dx(x^2 + 3x))",
-      "Trigonometric functions (e.g., sin(x) + cos(x))",
-      "Logarithmic expressions (e.g., log(x) + ln(x))",
+      "Linear, quadratic, polynomial equations",
+      "Equations with sqrt, log, sin, cos, tan",
+      "Expression evaluation (simplify + calculate)",
+      "Derivatives (d/dx)",
+      "Integrals (basic antiderivative)",
     ],
     examples: [
       { type: "Linear Equation", input: "2x + 5 = 13" },
-      { type: "Expression Evaluation", input: "3^2 + 4*5 - 2" },
-      { type: "Derivative", input: "d/dx(x^2 + 3x + 1)" },
+      { type: "Quadratic Equation", input: "x^2 - 4 = 0" },
+      { type: "Square Root Equation", input: "sqrt(x+4) = 6" },
+      { type: "Logarithmic Equation", input: "log(x) = 2" },
+      { type: "Trigonometric Equation", input: "sin(x) = 0.5" },
+      { type: "Derivative", input: "d/dx(x^2 + 3x)" },
+      { type: "Integral", input: "∫x^2" },
     ],
-    usage: {
-      endpoint: "/api/math/solve",
-      method: "POST",
-      body: { formula: "your_mathematical_expression_here" },
-    },
   };
 
   res.json(helpInfo);
