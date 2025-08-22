@@ -42,10 +42,8 @@ export const solveMathProblem = async (req, res) => {
 const generateStepByStepSolution = async (formula) => {
   const originalFormula = formula;
 
-  // normalize input (sqrt*, ^, va boshqalarni tuzatamiz)
-  const parsed = parseInput(formula)
-    .replace(/sqrt\*/g, "sqrt") // noto‘g‘ri sqrt* ni tuzatish
-    .replace(/√\(/g, "sqrt("); // √ belgisi bo‘lsa, sqrt() ga aylantirish
+  // normalize input
+  const parsed = parseInput(formula).replace(/√\(/g, "sqrt("); // √ → sqrt()
 
   let solution = {
     originalFormula,
@@ -111,16 +109,32 @@ const solveEquation = async (formula, solution) => {
       explanation: "Starting with the given equation.",
     });
 
-    // nerdamer bilan yechish
-    const nerdSolution = nerdamer(
-      `solve(${leftSide}-(${rightSide}), x)`
-    ).toString();
+    let answers = [];
 
-    const answers = nerdSolution
-      .replace(/^\[|\]$/g, "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    // ✅ Trigonometric special handling
+    if (leftSide.startsWith("sin(")) {
+      const val = math.evaluate(rightSide);
+      answers.push(`x = asin(${val}) + 2kπ`);
+      answers.push(`x = π - asin(${val}) + 2kπ`);
+    } else if (leftSide.startsWith("cos(")) {
+      const val = math.evaluate(rightSide);
+      answers.push(`x = acos(${val}) + 2kπ`);
+      answers.push(`x = -acos(${val}) + 2kπ`);
+    } else if (leftSide.startsWith("tan(")) {
+      const val = math.evaluate(rightSide);
+      answers.push(`x = atan(${val}) + kπ`);
+    } else {
+      // Default: nerdamer
+      const nerdSolution = nerdamer(
+        `solve(${leftSide}-(${rightSide}), x)`
+      ).toString();
+
+      answers = nerdSolution
+        .replace(/^\[|\]$/g, "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
 
     solution.finalAnswer = answers.map((a) => `x = ${a}`);
 
@@ -128,7 +142,8 @@ const solveEquation = async (formula, solution) => {
       step: 2,
       description: "Solved equation",
       expression: solution.finalAnswer.join(" or "),
-      explanation: "Isolated the variable using algebraic rules.",
+      explanation:
+        "Isolated the variable using algebraic or trigonometric rules.",
     });
 
     // verify
@@ -269,7 +284,6 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
 
   solutions.forEach((sol) => {
     try {
-      // faqat raqamni ajratib olish (x= qismidan keyin)
       const cleanSol = sol.replace(/^x\s*=\s*/, "");
 
       const leftResult = math.evaluate(leftSide.replace(/x/g, `(${cleanSol})`));
