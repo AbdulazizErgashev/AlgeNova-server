@@ -284,19 +284,52 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
 
   solutions.forEach((sol) => {
     try {
-      const cleanSol = sol.replace(/^x\s*=\s*/, "");
+      let cleanSol = sol.replace(/^x\s*=\s*/, "").trim();
 
-      const leftResult = math.evaluate(leftSide.replace(/x/g, `(${cleanSol})`));
-      const rightResult = math.evaluate(
-        rightSide.replace(/x/g, `(${cleanSol})`)
-      );
+      // ✅ π ni pi ga almashtirish
+      cleanSol = cleanSol.replace(/π/g, "pi");
 
-      verifications.push({
-        solution: `x = ${cleanSol}`,
-        leftSide: `${leftSide} → ${leftResult}`,
-        rightSide: `${rightSide} → ${rightResult}`,
-        isCorrect: Math.abs(leftResult - rightResult) < 1e-10,
-      });
+      // ✅ Agar k bo‘lsa → k=0 va k=1 uchun tekshiramiz
+      if (/k/.test(cleanSol)) {
+        [0, 1].forEach((kVal) => {
+          const testExpr = cleanSol.replace(/k/g, `(${kVal})`);
+          try {
+            const leftResult = math.evaluate(
+              leftSide.replace(/x/g, `(${testExpr})`)
+            );
+            const rightResult = math.evaluate(
+              rightSide.replace(/x/g, `(${testExpr})`)
+            );
+
+            verifications.push({
+              solution: `x = ${cleanSol}, k=${kVal}`,
+              leftSide: `${leftSide} → ${leftResult}`,
+              rightSide: `${rightSide} → ${rightResult}`,
+              isCorrect: Math.abs(leftResult - rightResult) < 1e-10,
+            });
+          } catch (err) {
+            verifications.push({
+              solution: `x = ${cleanSol}, k=${kVal}`,
+              error: `Verification error: ${err.message}`,
+            });
+          }
+        });
+      } else {
+        // ✅ Oddiy numeric yechimlar uchun
+        const leftResult = math.evaluate(
+          leftSide.replace(/x/g, `(${cleanSol})`)
+        );
+        const rightResult = math.evaluate(
+          rightSide.replace(/x/g, `(${cleanSol})`)
+        );
+
+        verifications.push({
+          solution: `x = ${cleanSol}`,
+          leftSide: `${leftSide} → ${leftResult}`,
+          rightSide: `${rightSide} → ${rightResult}`,
+          isCorrect: Math.abs(leftResult - rightResult) < 1e-10,
+        });
+      }
     } catch (error) {
       verifications.push({
         solution: `x = ${sol}`,
