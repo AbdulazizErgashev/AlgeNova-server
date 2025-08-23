@@ -5,7 +5,6 @@ export const parseInput = (input) => {
 
   let cleaned = input.trim();
 
-  // 1️⃣ Son so‘zlarini raqamga aylantirish
   const doc = nlp(cleaned.toLowerCase());
   const numberTerms = doc.numbers().out("array");
   const numberValues = doc.numbers().toNumber().out("array");
@@ -16,7 +15,6 @@ export const parseInput = (input) => {
     cleaned = cleaned.replace(regex, numberValues[i]);
   });
 
-  // 2️⃣ Matnni matematik belgiga aylantirish
   cleaned = cleaned
     .replace(/\bplus\b/gi, "+")
     .replace(/\bminus\b/gi, "-")
@@ -40,7 +38,6 @@ export const parseInput = (input) => {
     .replace(/\s+/g, " ")
     .trim();
 
-  // 3️⃣ Pattern rules
   const patterns = [
     {
       regex: /subtract\s+([^from]+)\s+from\s+(.+)/gi,
@@ -57,20 +54,17 @@ export const parseInput = (input) => {
   ];
   patterns.forEach((p) => (cleaned = cleaned.replace(p.regex, p.replacement)));
 
-  // 4️⃣ Funksiya argumentlarini qavsga olish
   const functions = ["sin", "cos", "tan", "log", "ln", "sqrt", "abs"];
   functions.forEach((func) => {
     const regex = new RegExp(`${func}\\s*\\(([^)]*)\\)`, "gi");
     cleaned = cleaned.replace(regex, `${func}($1)`);
   });
 
-  // 5️⃣ Implicit multiplication (faqat son+harf va qavslar uchun)
-  cleaned = cleaned.replace(/(\d)([a-zA-Z])/g, "$1*$2"); // 2x -> 2*x
-  cleaned = cleaned.replace(/([a-zA-Z])(\d)/g, "$1*$2"); // x2 -> x*2
-  cleaned = cleaned.replace(/\)(\d)/g, ")*$1"); // )( -> )*n
-  cleaned = cleaned.replace(/(\d)\(/g, "$1*("); // 2( -> 2*(
+  cleaned = cleaned.replace(/(\d)([a-zA-Z])/g, "$1*$2");
+  cleaned = cleaned.replace(/([a-zA-Z])(\d)/g, "$1*$2");
+  cleaned = cleaned.replace(/\)(\d)/g, ")*$1");
+  cleaned = cleaned.replace(/(\d)\(/g, "$1*(");
 
-  // 6️⃣ Operatorlar atrofidagi bo‘sh joyni olib tashlash
   cleaned = cleaned.replace(/\s*([\+\-\*\/\^=])\s*/g, "$1");
 
   return cleaned;
@@ -78,8 +72,6 @@ export const parseInput = (input) => {
 
 export const validateMathExpression = (expression) => {
   const errors = [];
-
-  // qavslarni tekshirish
   let parenCount = 0;
   for (const char of expression) {
     if (char === "(") parenCount++;
@@ -91,13 +83,11 @@ export const validateMathExpression = (expression) => {
   }
   if (parenCount > 0) errors.push("Unmatched opening parenthesis");
 
-  // noto‘g‘ri belgilar
   const validChars = /^[0-9a-zA-Z+\-*/^()=.,]+$/;
   if (!validChars.test(expression)) {
     errors.push("Contains invalid characters");
   }
 
-  // ketma-ket operatorlar
   if (/[+\-*/^]{2,}/.test(expression)) {
     errors.push("Consecutive operators found");
   }

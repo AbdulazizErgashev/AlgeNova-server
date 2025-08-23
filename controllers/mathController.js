@@ -1,21 +1,15 @@
-// controllers/mathController.js
 import { create, all, parse, simplify } from "mathjs";
 import nerdamer from "nerdamer";
 import "nerdamer/Solve.js";
 import "nerdamer/Algebra.js";
 import "nerdamer/Calculus.js";
 import "nerdamer/Extra.js";
-
 import { parseInput } from "../utils/parser.js";
 
 const math = create(all);
 
-/**
- * Main Controller: Solve Math Problem
- */
 export const solveMathProblem = async (req, res) => {
   const { formula } = req.body || {};
-
   if (!formula || typeof formula !== "string") {
     return res.status(400).json({
       error:
@@ -23,7 +17,6 @@ export const solveMathProblem = async (req, res) => {
       example: { formula: "2x + 5 = 13" },
     });
   }
-
   try {
     const solution = await generateStepByStepSolution(formula);
     res.json(solution);
@@ -36,15 +29,16 @@ export const solveMathProblem = async (req, res) => {
   }
 };
 
-/**
- * Step-by-step solver
- */
+const cleanOutput = (str) => {
+  return str
+    .replace(/\*/g, "") // yulduzni olib tashlash
+    .replace(/\s+/g, " ") // ortiqcha probellarni tozalash
+    .trim();
+};
+
 const generateStepByStepSolution = async (formula) => {
   const originalFormula = formula;
-
-  // normalize input
-  const parsed = parseInput(formula).replace(/√\(/g, "sqrt("); // √ → sqrt()
-
+  const parsed = parseInput(formula).replace(/√\(/g, "sqrt(");
   let solution = {
     originalFormula,
     parsedFormula: parsed,
@@ -54,7 +48,6 @@ const generateStepByStepSolution = async (formula) => {
     explanation: "",
     type: determineFormulaType(parsed),
   };
-
   if (solution.type === "equation") {
     solution = await solveEquation(parsed, solution);
   } else if (solution.type === "expression") {
@@ -66,13 +59,9 @@ const generateStepByStepSolution = async (formula) => {
   } else {
     throw new Error("Unsupported formula type.");
   }
-
   return solution;
 };
 
-/**
- * Detect formula type
- */
 const determineFormulaType = (formula) => {
   if (
     formula.includes("=") &&
@@ -92,26 +81,18 @@ const determineFormulaType = (formula) => {
   }
 };
 
-/**
- * Solve equations
- */
 const solveEquation = async (formula, solution) => {
   solution.explanation =
     "This is an algebraic or transcendental equation. I will solve for the unknown variable by isolating it on one side.";
-
   try {
     const [leftSide, rightSide] = formula.split("=").map((s) => s.trim());
-
     solution.steps.push({
       step: 1,
       description: "Original equation",
       expression: `${leftSide} = ${rightSide}`,
       explanation: "Starting with the given equation.",
     });
-
     let answers = [];
-
-    // ✅ Trigonometric special handling
     if (leftSide.startsWith("sin(")) {
       const val = math.evaluate(rightSide);
       answers.push(`x = asin(${val}) + 2kπ`);
@@ -124,20 +105,16 @@ const solveEquation = async (formula, solution) => {
       const val = math.evaluate(rightSide);
       answers.push(`x = atan(${val}) + kπ`);
     } else {
-      // Default: nerdamer
       const nerdSolution = nerdamer(
         `solve(${leftSide}-(${rightSide}), x)`
       ).toString();
-
       answers = nerdSolution
         .replace(/^\[|\]$/g, "")
         .split(",")
-        .map((s) => s.trim())
+        .map((s) => cleanOutput(s))
         .filter((s) => s.length > 0);
     }
-
     solution.finalAnswer = answers.map((a) => `x = ${a}`);
-
     solution.steps.push({
       step: 2,
       description: "Solved equation",
@@ -145,8 +122,6 @@ const solveEquation = async (formula, solution) => {
       explanation:
         "Isolated the variable using algebraic or trigonometric rules.",
     });
-
-    // verify
     solution.verification = verifyEquationSolution(
       leftSide,
       rightSide,
@@ -161,17 +136,12 @@ const solveEquation = async (formula, solution) => {
     });
     solution.finalAnswer = "Error in processing";
   }
-
   return solution;
 };
 
-/**
- * Expression evaluation
- */
 const evaluateExpression = async (formula, solution) => {
   solution.explanation =
     "This is a mathematical expression. I will evaluate it step by step.";
-
   try {
     solution.steps.push({
       step: 1,
@@ -179,43 +149,34 @@ const evaluateExpression = async (formula, solution) => {
       expression: formula,
       explanation: "Starting with the given mathematical expression.",
     });
-
     const expr = parse(formula);
     const simplified = simplify(expr);
-
     if (simplified.toString() !== formula) {
       solution.steps.push({
         step: 2,
         description: "Simplified form",
-        expression: simplified.toString(),
+        expression: cleanOutput(simplified.toString()),
         explanation: "Simplifying the expression using algebraic rules.",
       });
     }
-
     const result = math.evaluate(formula);
-    solution.finalAnswer = result;
-
+    solution.finalAnswer = cleanOutput(result.toString());
     solution.steps.push({
       step: solution.steps.length + 1,
       description: "Final calculation",
-      expression: `= ${result}`,
+      expression: `= ${solution.finalAnswer}`,
       explanation:
         "Performing the final calculation to get the numerical result.",
     });
   } catch (error) {
     throw new Error(error.message);
   }
-
   return solution;
 };
 
-/**
- * Derivative solver
- */
 const solveDerivative = async (formula, solution) => {
   solution.explanation =
     "This is a derivative problem. I will find the derivative using differentiation rules.";
-
   try {
     let func = formula
       .replace(/d\/dx\s*/, "")
@@ -227,69 +188,51 @@ const solveDerivative = async (formula, solution) => {
       expression: `f(x) = ${func}`,
       explanation: "Identifying the function to differentiate.",
     });
-
     const deriv = nerdamer(`diff(${func}, x)`).toString();
-
+    const cleanedDeriv = cleanOutput(deriv);
     solution.steps.push({
       step: 2,
       description: "Apply differentiation rules",
-      expression: `f'(x) = ${deriv}`,
+      expression: `f'(x) = ${cleanedDeriv}`,
       explanation: "Using calculus differentiation rules.",
     });
-
-    solution.finalAnswer = deriv;
+    solution.finalAnswer = cleanedDeriv;
   } catch (error) {
     throw new Error(error.message);
   }
-
   return solution;
 };
 
-/**
- * Integral solver
- */
 const solveIntegral = async (formula, solution) => {
   solution.explanation =
     "This is an integration problem. I will find the antiderivative.";
-
   try {
     let func = formula
       .replace(/∫/, "")
       .replace(/integral/i, "")
       .trim();
     const integral = nerdamer(`integrate(${func}, x)`).toString();
-
+    const cleanedIntegral = cleanOutput(integral);
     solution.steps.push({
       step: 1,
       description: "Integration",
-      expression: `∫ ${func} dx = ${integral} + C`,
+      expression: `∫ ${func} dx = ${cleanedIntegral} + C`,
       explanation: "Finding the antiderivative symbolically.",
     });
-
-    solution.finalAnswer = `${integral} + C`;
+    solution.finalAnswer = `${cleanedIntegral} + C`;
   } catch (error) {
     solution.finalAnswer = "Integration failed";
   }
-
   return solution;
 };
 
-/**
- * Verification for equation solutions
- */
 const verifyEquationSolution = (leftSide, rightSide, solutions) => {
   const verifications = [];
-
   if (!Array.isArray(solutions)) solutions = [solutions];
-
   solutions.forEach((sol) => {
     try {
       let cleanSol = sol.replace(/^x\s*=\s*/, "").trim();
-
-      // ✅ π ni pi ga almashtirish
       cleanSol = cleanSol.replace(/π/g, "pi");
-
-      // ✅ Agar k bo‘lsa → k=0 va k=1 uchun tekshiramiz
       if (/k/.test(cleanSol)) {
         [0, 1].forEach((kVal) => {
           const testExpr = cleanSol.replace(/k/g, `(${kVal})`);
@@ -300,7 +243,6 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
             const rightResult = math.evaluate(
               rightSide.replace(/x/g, `(${testExpr})`)
             );
-
             verifications.push({
               solution: `x = ${cleanSol}, k=${kVal}`,
               leftSide: `${leftSide} → ${leftResult}`,
@@ -315,14 +257,12 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
           }
         });
       } else {
-        // ✅ Oddiy numeric yechimlar uchun
         const leftResult = math.evaluate(
           leftSide.replace(/x/g, `(${cleanSol})`)
         );
         const rightResult = math.evaluate(
           rightSide.replace(/x/g, `(${cleanSol})`)
         );
-
         verifications.push({
           solution: `x = ${cleanSol}`,
           leftSide: `${leftSide} → ${leftResult}`,
@@ -337,13 +277,9 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
       });
     }
   });
-
   return verifications;
 };
 
-/**
- * Helper endpoint: GET /api/math/help
- */
 export const getMathHelp = async (req, res) => {
   const helpInfo = {
     supportedOperations: [
@@ -363,6 +299,5 @@ export const getMathHelp = async (req, res) => {
       { type: "Integral", input: "∫x^2" },
     ],
   };
-
   res.json(helpInfo);
 };
