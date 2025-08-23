@@ -90,6 +90,7 @@ const solveEquation = async (formula, solution) => {
       explanation: "Starting with the given equation.",
     });
     let answers = [];
+
     if (leftSide.startsWith("sin(")) {
       const val = math.evaluate(rightSide);
       answers.push(`x = asin(${val}) + 2kπ`);
@@ -101,6 +102,13 @@ const solveEquation = async (formula, solution) => {
     } else if (leftSide.startsWith("tan(")) {
       const val = math.evaluate(rightSide);
       answers.push(`x = atan(${val}) + kπ`);
+    } else if (leftSide.startsWith("log(")) {
+      const val = math.evaluate(rightSide);
+      const base10 = Math.pow(10, val);
+      answers.push(`${base10}`);
+      const naturalExp = Math.exp(val);
+      answers.push(`e^${val}`);
+      answers.push(`${naturalExp}`);
     } else {
       const nerdSolution = nerdamer(
         `solve(${leftSide}-(${rightSide}), x)`
@@ -111,13 +119,14 @@ const solveEquation = async (formula, solution) => {
         .map((s) => cleanOutput(s))
         .filter((s) => s.length > 0);
     }
+
     solution.finalAnswer = answers.map((a) => `x = ${a}`);
     solution.steps.push({
       step: 2,
       description: "Solved equation",
       expression: solution.finalAnswer.join(" or "),
       explanation:
-        "Isolated the variable using algebraic or trigonometric rules.",
+        "Isolated the variable using algebraic, logarithmic, or trigonometric rules.",
     });
     solution.verification = verifyEquationSolution(
       leftSide,
