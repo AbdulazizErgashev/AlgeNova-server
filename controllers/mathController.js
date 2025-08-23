@@ -8,6 +8,17 @@ import { parseInput } from "../utils/parser.js";
 
 const math = create(all);
 
+// Helper: mathjs -> LaTeX
+const toLatex = (expr) => {
+  try {
+    return math.parse(expr).toTex({ parenthesis: "keep", implicit: "show" });
+  } catch {
+    return expr; // Agar parse bo'lmasa oddiy string qaytariladi
+  }
+};
+
+const cleanOutput = (str) => str.replace(/\*/g, "").replace(/\s+/g, " ").trim();
+
 export const solveMathProblem = async (req, res) => {
   const { formula } = req.body || {};
   if (!formula || typeof formula !== "string") {
@@ -29,10 +40,6 @@ export const solveMathProblem = async (req, res) => {
   }
 };
 
-const cleanOutput = (str) => {
-  return str.replace(/\*/g, "").replace(/\s+/g, " ").trim();
-};
-
 const generateStepByStepSolution = async (formula) => {
   const originalFormula = formula;
   const parsed = parseInput(formula).replace(/√\(/g, "sqrt(");
@@ -41,10 +48,12 @@ const generateStepByStepSolution = async (formula) => {
     parsedFormula: parsed,
     steps: [],
     finalAnswer: null,
+    finalAnswerLatex: null,
     verification: null,
     explanation: "",
     type: determineFormulaType(parsed),
   };
+
   if (solution.type === "equation") {
     solution = await solveEquation(parsed, solution);
   } else if (solution.type === "expression") {
@@ -56,6 +65,7 @@ const generateStepByStepSolution = async (formula) => {
   } else {
     throw new Error("Unsupported formula type.");
   }
+
   return solution;
 };
 
@@ -78,17 +88,21 @@ const determineFormulaType = (formula) => {
   }
 };
 
+// ---------------- Equation Solver ----------------
 const solveEquation = async (formula, solution) => {
   solution.explanation =
     "This is an algebraic or transcendental equation. I will solve for the unknown variable by isolating it on one side.";
   try {
     const [leftSide, rightSide] = formula.split("=").map((s) => s.trim());
+
     solution.steps.push({
       step: 1,
       description: "Original equation",
       expression: `${leftSide} = ${rightSide}`,
+      expressionLatex: `${toLatex(leftSide)} = ${toLatex(rightSide)}`,
       explanation: "Starting with the given equation.",
     });
+
     let answers = [];
 
     if (leftSide.startsWith("sin(")) {
@@ -121,13 +135,17 @@ const solveEquation = async (formula, solution) => {
     }
 
     solution.finalAnswer = answers.map((a) => `x = ${a}`);
+    solution.finalAnswerLatex = answers.map((a) => `x = ${toLatex(a)}`);
+
     solution.steps.push({
       step: 2,
       description: "Solved equation",
       expression: solution.finalAnswer.join(" or "),
+      expressionLatex: solution.finalAnswerLatex.join(" \\text{ or } "),
       explanation:
         "Isolated the variable using algebraic, logarithmic, or trigonometric rules.",
     });
+
     solution.verification = verifyEquationSolution(
       leftSide,
       rightSide,
@@ -138,13 +156,16 @@ const solveEquation = async (formula, solution) => {
       step: 1,
       description: "Error",
       expression: formula,
+      expressionLatex: formula,
       explanation: `Unable to process equation: ${error.message}`,
     });
     solution.finalAnswer = "Error in processing";
+    solution.finalAnswerLatex = "Error in processing";
   }
   return solution;
 };
 
+// ---------------- Expression Solver ----------------
 const evaluateExpression = async (formula, solution) => {
   solution.explanation =
     "This is a mathematical expression. I will evaluate it step by step.";
@@ -153,24 +174,32 @@ const evaluateExpression = async (formula, solution) => {
       step: 1,
       description: "Original expression",
       expression: formula,
+      expressionLatex: toLatex(formula),
       explanation: "Starting with the given mathematical expression.",
     });
+
     const expr = parse(formula);
     const simplified = simplify(expr);
+
     if (simplified.toString() !== formula) {
       solution.steps.push({
         step: 2,
         description: "Simplified form",
         expression: cleanOutput(simplified.toString()),
+        expressionLatex: toLatex(simplified.toString()),
         explanation: "Simplifying the expression using algebraic rules.",
       });
     }
+
     const result = math.evaluate(formula);
     solution.finalAnswer = cleanOutput(result.toString());
+    solution.finalAnswerLatex = toLatex(result.toString());
+
     solution.steps.push({
       step: solution.steps.length + 1,
       description: "Final calculation",
       expression: `= ${solution.finalAnswer}`,
+      expressionLatex: `= ${solution.finalAnswerLatex}`,
       explanation:
         "Performing the final calculation to get the numerical result.",
     });
@@ -180,6 +209,7 @@ const evaluateExpression = async (formula, solution) => {
   return solution;
 };
 
+// ---------------- Derivative Solver ----------------
 const solveDerivative = async (formula, solution) => {
   solution.explanation =
     "This is a derivative problem. I will find the derivative using differentiation rules.";
@@ -192,23 +222,30 @@ const solveDerivative = async (formula, solution) => {
       step: 1,
       description: "Original function",
       expression: `f(x) = ${func}`,
+      expressionLatex: `f(x) = ${toLatex(func)}`,
       explanation: "Identifying the function to differentiate.",
     });
+
     const deriv = nerdamer(`diff(${func}, x)`).toString();
     const cleanedDeriv = cleanOutput(deriv);
+
     solution.steps.push({
       step: 2,
       description: "Apply differentiation rules",
       expression: `f'(x) = ${cleanedDeriv}`,
+      expressionLatex: `f'(x) = ${toLatex(cleanedDeriv)}`,
       explanation: "Using calculus differentiation rules.",
     });
+
     solution.finalAnswer = cleanedDeriv;
+    solution.finalAnswerLatex = toLatex(cleanedDeriv);
   } catch (error) {
     throw new Error(error.message);
   }
   return solution;
 };
 
+// ---------------- Integral Solver ----------------
 const solveIntegral = async (formula, solution) => {
   solution.explanation =
     "This is an integration problem. I will find the antiderivative.";
@@ -219,26 +256,36 @@ const solveIntegral = async (formula, solution) => {
       .trim();
     const integral = nerdamer(`integrate(${func}, x)`).toString();
     const cleanedIntegral = cleanOutput(integral);
+
     solution.steps.push({
       step: 1,
       description: "Integration",
       expression: `∫ ${func} dx = ${cleanedIntegral} + C`,
+      expressionLatex: `\\int ${toLatex(func)} \\, dx = ${toLatex(
+        cleanedIntegral
+      )} + C`,
       explanation: "Finding the antiderivative symbolically.",
     });
+
     solution.finalAnswer = `${cleanedIntegral} + C`;
+    solution.finalAnswerLatex = `${toLatex(cleanedIntegral)} + C`;
   } catch (error) {
     solution.finalAnswer = "Integration failed";
+    solution.finalAnswerLatex = "Integration failed";
   }
   return solution;
 };
 
+// ---------------- Verification ----------------
 const verifyEquationSolution = (leftSide, rightSide, solutions) => {
   const verifications = [];
   if (!Array.isArray(solutions)) solutions = [solutions];
+
   solutions.forEach((sol) => {
     try {
       let cleanSol = sol.replace(/^x\s*=\s*/, "").trim();
       cleanSol = cleanSol.replace(/π/g, "pi");
+
       if (/k/.test(cleanSol)) {
         [0, 1].forEach((kVal) => {
           const testExpr = cleanSol.replace(/k/g, `(${kVal})`);
@@ -251,6 +298,7 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
             );
             verifications.push({
               solution: `x = ${cleanSol}, k=${kVal}`,
+              solutionLatex: `x = ${toLatex(cleanSol)}, k=${kVal}`,
               leftSide: `${leftSide} → ${leftResult}`,
               rightSide: `${rightSide} → ${rightResult}`,
               isCorrect: Math.abs(leftResult - rightResult) < 1e-10,
@@ -258,6 +306,7 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
           } catch (err) {
             verifications.push({
               solution: `x = ${cleanSol}, k=${kVal}`,
+              solutionLatex: `x = ${toLatex(cleanSol)}, k=${kVal}`,
               error: `Verification error: ${err.message}`,
             });
           }
@@ -271,6 +320,7 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
         );
         verifications.push({
           solution: `x = ${cleanSol}`,
+          solutionLatex: `x = ${toLatex(cleanSol)}`,
           leftSide: `${leftSide} → ${leftResult}`,
           rightSide: `${rightSide} → ${rightResult}`,
           isCorrect: Math.abs(leftResult - rightResult) < 1e-10,
@@ -279,13 +329,16 @@ const verifyEquationSolution = (leftSide, rightSide, solutions) => {
     } catch (error) {
       verifications.push({
         solution: `x = ${sol}`,
+        solutionLatex: `x = ${toLatex(sol)}`,
         error: `Verification error: ${error.message}`,
       });
     }
   });
+
   return verifications;
 };
 
+// ---------------- Help Endpoint ----------------
 export const getMathHelp = async (req, res) => {
   const helpInfo = {
     supportedOperations: [
