@@ -30,10 +30,7 @@ export const solveMathProblem = async (req, res) => {
 };
 
 const cleanOutput = (str) => {
-  return str
-    .replace(/\*/g, "") // yulduzni olib tashlash
-    .replace(/\s+/g, " ") // ortiqcha probellarni tozalash
-    .trim();
+  return str.replace(/\*/g, "").replace(/\s+/g, " ").trim();
 };
 
 const generateStepByStepSolution = async (formula) => {
