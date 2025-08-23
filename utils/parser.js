@@ -18,6 +18,7 @@ export const parseInput = (input) => {
   cleaned = cleaned
     .replace(/\bplus\b/gi, "+")
     .replace(/\bminus\b/gi, "-")
+    .replace(/−/g, "-")
     .replace(/\btimes\b/gi, "*")
     .replace(/\bmultiplied by\b/gi, "*")
     .replace(/\bdivided by\b/gi, "/")
