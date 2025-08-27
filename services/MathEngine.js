@@ -1,28 +1,17 @@
-// =========================
-// File: src/services/mathEngine.js
-// =========================
-import {
-  create,
-  all,
-  parse as mathParse,
-  simplify as mathSimplify,
-} from "mathjs";
+import { create, all } from "mathjs";
 import nerdamer from "nerdamer";
 import "nerdamer/Solve.js";
 import "nerdamer/Algebra.js";
 import "nerdamer/Calculus.js";
 import "nerdamer/Extra.js";
-import { parseInput, validateMathExpression } from "../utils/parser.js";
+import { parseInput } from "../utils/parser.js";
 
-// MathJS instance (fraction: false for compact output; configure as needed)
+// MathJS instance
 const math = create(all, { matrix: "Matrix", number: "number" });
 
 // -------------------- Utilities --------------------
-const isMatrixString = (s) => /\[\[.*\]\]/.test(s);
-
 const toLatex = (expr) => {
   try {
-    // Accept both strings and MathJS nodes
     if (typeof expr === "string") {
       const node = math.parse(expr);
       return node.toTex({ parenthesis: "keep", implicit: "show" });
@@ -34,11 +23,7 @@ const toLatex = (expr) => {
   }
 };
 
-const cleanOutput = (str) =>
-  String(str).replace(/\*/g, "").replace(/\s+/g, " ").trim();
-
 const detectMainVariable = (formula) => {
-  // Find candidate variables excluding known function names and constants
   const banned = new Set([
     "sin",
     "cos",
@@ -84,8 +69,8 @@ const detectMainVariable = (formula) => {
   return Array.from(vars)[0];
 };
 
-// Nerdamer wrapper: integrate/limit/series helpers
-const integrateNerdamer = (f, v, a = undefined, b = undefined) => {
+// Nerdamer wrappers
+const integrateNerdamer = (f, v, a, b) => {
   if (a !== undefined && b !== undefined) {
     return nerdamer(`defint(${f}, ${v}, ${a}, ${b})`).toString();
   }
@@ -94,10 +79,42 @@ const integrateNerdamer = (f, v, a = undefined, b = undefined) => {
 
 const limitNerdamer = (f, v, to) =>
   nerdamer(`limit(${f}, ${v}, ${to})`).toString();
+
 const seriesNerdamer = (f, v, around = 0, order = 5) =>
   nerdamer(`series(${f}, ${v}, ${around}, ${order})`).toString();
 
-// -------------------- Main HTTP handlers --------------------
+// -------------------- Step-by-step solver --------------------
+const generateStepByStepSolution = async (formula) => {
+  const parsed = parseInput(formula);
+  const variable = detectMainVariable(parsed);
+
+  let result;
+  try {
+    // 1. Algebraic simplification
+    const simplified = math.simplify(parsed);
+
+    // 2. Equation solving if "=" exists
+    if (parsed.includes("=")) {
+      const [lhs, rhs] = parsed.split("=");
+      const eq = nerdamer(`${lhs}-(${rhs})`);
+      result = eq.solveFor(variable).toString();
+    } else {
+      result = simplified.toString();
+    }
+
+    return {
+      originalFormula: formula,
+      parsedFormula: parsed,
+      variable,
+      solution: result,
+      latex: toLatex(parsed),
+    };
+  } catch (err) {
+    throw new Error(`Parsing/Solving failed: ${err.message}`);
+  }
+};
+
+// -------------------- HTTP Handler --------------------
 export const solveMathProblem = async (req, res) => {
   const { formula } = req.body || {};
   if (!formula || typeof formula !== "string") {

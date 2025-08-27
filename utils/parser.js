@@ -1,6 +1,5 @@
 import nlp from "compromise";
 
-// Convert LaTeX and spoken math to computable expression (mathjs/nerdamer)
 export const parseInput = (input) => {
   if (!input || typeof input !== "string") return "";
   let cleaned = input.trim();
@@ -29,26 +28,7 @@ export const parseInput = (input) => {
     .replace(/\\ln/g, "ln")
     .replace(/\\log/g, "log");
 
-  // Binomial & sums (simple heuristic)
-  cleaned = cleaned.replace(
-    /\\binom\{([^}]*)\}\{([^}]*)\}/g,
-    "binomial($1,$2)"
-  );
-  cleaned = cleaned.replace(
-    /\\sum_\{([^}]*)=([^}]*)\}\^\{([^}]*)\}\s*/g,
-    (m, idx, from, to) => {
-      // Next token after sum is the summand; we try to capture following (...) or {...} or a token
-      // For stability, require user to pass already expanded or use series().
-      return `SUM(${idx},${from},${to},`;
-    }
-  );
-  // Close a possible SUM(..., summand) if user wrote e.g. "\\sum_{k=0}^{n} k^2"
-  cleaned = cleaned.replace(
-    /SUM\(([^,]+),([^,]+),([^,]+),\s*([^].]+)\)/g,
-    (m, idx, from, to, body) => `sum(${body}, ${idx}, ${from}, ${to})`
-  );
-
-  // Integrals: \int_a^b f(x) dx or \int f(x) dx
+  // Integrals
   cleaned = cleaned.replace(
     /\\int_\{([^}]*)\}\^\{([^}]*)\}([^d]+)d([a-zA-Z])/g,
     (m, a, b, fx, v) => `integrate(${fx.trim()}, ${v}, ${a}, ${b})`
@@ -58,13 +38,13 @@ export const parseInput = (input) => {
     (m, fx, v) => `integrate(${fx.trim()}, ${v})`
   );
 
-  // Limits: \lim_{h->0} g(h)
+  // Limits
   cleaned = cleaned.replace(
     /\\lim_\{\s*([a-zA-Z])\s*\\to\s*([^}]*)\s*\}\s*([^\n]+)/g,
     (m, v, to, body) => `limit(${body.trim()}, ${v}, ${to})`
   );
 
-  // Matrices: \begin{bmatrix} ... \\ ... \end{bmatrix}
+  // Matrices
   cleaned = cleaned.replace(
     /\\begin\{bmatrix\}([\s\S]*?)\\end\{bmatrix\}/g,
     (_, body) => {
@@ -93,7 +73,7 @@ export const parseInput = (input) => {
     (m, inside) => `norm(${inside})`
   );
 
-  // Spoken words -> symbols (via compromise)
+  // Spoken words -> symbols
   const doc = nlp(cleaned.toLowerCase());
   const numberTerms = doc.numbers().out("array");
   const numberValues = doc.numbers().toNumber().out("array");
@@ -113,4 +93,6 @@ export const parseInput = (input) => {
     .replace(/\bover\b/gi, "/")
     .replace(/\bequals\b/gi, "=")
     .replace(/\bis equal to\b/gi, "=");
+
+  return cleaned;
 };
