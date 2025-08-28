@@ -42,7 +42,30 @@ export const solveMathProblem = async (req, res) => {
 
 const generateStepByStepSolution = async (formula) => {
   const originalFormula = formula;
-  const parsed = parseInput(formula).replace(/√\(/g, "sqrt(");
+
+  // 🔹 LaTeX {} → () ga o‘tkazib yuboramiz
+  let parsed = parseInput(formula)
+    .replace(/√\(/g, "sqrt(")
+    .replace(/\\sqrt\{([^}]+)\}/g, "sqrt($1)")
+    .replace(/\\sqrt\s*\(/g, "sqrt(")
+    .replace(/\{([^}]+)\}/g, "($1)");
+
+  // 🔹 Avval maxsus formulalarni tekshiramiz
+  const special = handleSpecialFormulas(formula);
+  if (special) {
+    return {
+      originalFormula,
+      parsedFormula: parsed,
+      steps: [],
+      finalAnswer: "Special Formula",
+      finalAnswerLatex: special,
+      verification: null,
+      explanation: "This is a well-known mathematical identity/theorem.",
+      type: "special",
+    };
+  }
+
+  // 🔹 Oddiy holatlarda avvalgidek ishlayveradi
   let solution = {
     originalFormula,
     parsedFormula: parsed,
@@ -359,4 +382,36 @@ export const getMathHelp = async (req, res) => {
     ],
   };
   res.json(helpInfo);
+};
+
+// ---------------- Special Formula Handler ----------------
+const handleSpecialFormulas = (formula) => {
+  const specialFormulas = {
+    quadratic: "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}",
+    binomial: "(a+b)^n = \\sum_{k=0}^{n} \\binom{n}{k} a^{n-k} b^k",
+    euler: "e^{i\\pi} + 1 = 0",
+    pythagoras: "\\sin^2(\\theta) + \\cos^2(\\theta) = 1",
+    derivative_def: "f'(x) = \\lim_{h \\to 0} \\frac{f(x+h) - f(x)}{h}",
+    integral_general: "\\int_a^b f(x) dx = F(b) - F(a)",
+    maclaurin: "e^x = \\sum_{n=0}^{\\infty} \\frac{x^n}{n!}",
+    matrix:
+      "A = \\begin{bmatrix} 1 & 2 & 3 \\\\ 4 & 5 & 6 \\\\ 7 & 8 & 9 \\end{bmatrix}",
+    vector_length: "\\|\\vec{v}\\| = \\sqrt{v_1^2 + v_2^2 + \\cdots + v_n^2}",
+    gauss_integral: "\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}",
+  };
+
+  if (/quadratic/i.test(formula)) return specialFormulas.quadratic;
+  if (/binomial/i.test(formula)) return specialFormulas.binomial;
+  if (/euler/i.test(formula)) return specialFormulas.euler;
+  if (/pythagoras|trig/i.test(formula)) return specialFormulas.pythagoras;
+  if (/derivative.+definition/i.test(formula))
+    return specialFormulas.derivative_def;
+  if (/integral.+general/i.test(formula))
+    return specialFormulas.integral_general;
+  if (/maclaurin/i.test(formula)) return specialFormulas.maclaurin;
+  if (/matrix/i.test(formula)) return specialFormulas.matrix;
+  if (/vector.+length/i.test(formula)) return specialFormulas.vector_length;
+  if (/gauss.+integral/i.test(formula)) return specialFormulas.gauss_integral;
+
+  return null;
 };
