@@ -304,7 +304,7 @@ const solveDerivative = async (formula, solution) => {
   return solution;
 };
 
-// ---------------- Integral Solver ----------------
+// ---------------- Integral Solver (yangilangan) ----------------
 const solveIntegral = async (formula, solution) => {
   solution.explanation =
     "This is an integration problem. I will find the antiderivative.";
@@ -312,18 +312,62 @@ const solveIntegral = async (formula, solution) => {
     let func = formula
       .replace(/∫/, "")
       .replace(/integral/i, "")
+      .replace(/dx$/i, "")
       .trim();
+
+    solution.steps.push({
+      step: 1,
+      description: "Setup",
+      expression: `∫ ${func} dx`,
+      expressionLatex: `\\int ${toLatex(func)} \\, dx`,
+      explanation: "Starting with the given integral.",
+    });
+
+    // Special case: polynomial * sin/cos(x) => integration by parts
+    const match = func.match(/^(.+?)\s*\*\s*(sin|cos)\(x\)$/i);
+    if (match) {
+      let poly = match[1];
+      let trig = match[2].toLowerCase();
+
+      solution.steps.push({
+        step: 2,
+        description: "Integration by parts",
+        expression: `u = ${poly}, dv = ${trig}(x) dx`,
+        expressionLatex: `u=${toLatex(poly)}, dv=${trig}(x) dx`,
+        explanation: "Choose u as the polynomial and dv as trig function.",
+      });
+
+      const du = nerdamer(`diff(${poly}, x)`).toString();
+      const v = trig === "cos" ? "sin(x)" : "-cos(x)";
+
+      solution.steps.push({
+        step: 3,
+        description: "Differentiate and integrate",
+        expression: `du = ${du}, v = ${v}`,
+        expressionLatex: `du=${toLatex(du)}, v=${toLatex(v)}`,
+        explanation: "Differentiate u and integrate dv.",
+      });
+
+      solution.steps.push({
+        step: 4,
+        description: "Apply formula",
+        expression: `∫ ${poly}*${trig}(x) dx = ${poly}*${v} - ∫ ${v}*(${du}) dx`,
+        expressionLatex: `\\int ${toLatex(poly)} ${trig}(x) dx = ${toLatex(
+          poly
+        )}${toLatex(v)} - \\int ${toLatex(v)}${toLatex(du)} dx`,
+        explanation: "Applying integration by parts formula.",
+      });
+    }
+
     const integral = nerdamer(`integrate(${func}, x)`).toString();
     const cleanedIntegral = cleanOutput(integral);
 
     solution.steps.push({
-      step: 1,
-      description: "Integration",
-      expression: `∫ ${func} dx = ${cleanedIntegral} + C`,
-      expressionLatex: `\\int ${toLatex(func)} \\, dx = ${toLatex(
-        cleanedIntegral
-      )} + C`,
-      explanation: "Finding the antiderivative symbolically.",
+      step: solution.steps.length + 1,
+      description: "Final result",
+      expression: `${cleanedIntegral} + C`,
+      expressionLatex: `${toLatex(cleanedIntegral)} + C`,
+      explanation: "Simplified final antiderivative.",
     });
 
     solution.finalAnswer = `${cleanedIntegral} + C`;
