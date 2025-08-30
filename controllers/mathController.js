@@ -116,6 +116,42 @@ const solveEquation = async (formula, solution) => {
   solution.explanation =
     "This is an algebraic or transcendental equation. I will solve for the unknown variable by isolating it on one side.";
   try {
+    // Agar tenglamada ± bo‘lsa → ikkita variantga bo‘lib yuboramiz
+    if (formula.includes("±")) {
+      const plusVersion = formula.replace("±", "+");
+      const minusVersion = formula.replace("±", "-");
+
+      const plusSolution = await solveEquation(plusVersion, {
+        ...solution,
+        steps: [],
+      });
+      const minusSolution = await solveEquation(minusVersion, {
+        ...solution,
+        steps: [],
+      });
+
+      solution.finalAnswer = [
+        ...plusSolution.finalAnswer,
+        ...minusSolution.finalAnswer,
+      ];
+      solution.finalAnswerLatex = [
+        ...plusSolution.finalAnswerLatex,
+        ...minusSolution.finalAnswerLatex,
+      ];
+
+      solution.steps.push({
+        step: 1,
+        description: "Handling ±",
+        expression: `${plusVersion}  OR  ${minusVersion}`,
+        expressionLatex: `${toLatex(plusVersion)} \\; \\text{or} \\; ${toLatex(
+          minusVersion
+        )}`,
+        explanation: "Splitting ± into + and - to get two separate solutions.",
+      });
+
+      return solution;
+    }
+
     const [leftSide, rightSide] = formula.split("=").map((s) => s.trim());
 
     solution.steps.push({
@@ -142,8 +178,8 @@ const solveEquation = async (formula, solution) => {
     } else if (leftSide.startsWith("log(")) {
       const val = math.evaluate(rightSide);
       const base10 = Math.pow(10, val);
-      answers.push(`${base10}`);
       const naturalExp = Math.exp(val);
+      answers.push(`${base10}`);
       answers.push(`e^${val}`);
       answers.push(`${naturalExp}`);
     } else {
