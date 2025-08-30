@@ -111,15 +111,42 @@ const determineFormulaType = (formula) => {
   }
 };
 
-// ---------------- Equation Solver ----------------
+// --- Step logger helper ---
+const addStep = (steps, description, expression, explanation = "") => {
+  steps.push({
+    step: steps.length + 1,
+    description,
+    expression:
+      typeof expression === "string" ? expression : String(expression),
+    expressionLatex: (() => {
+      try {
+        return toLatex(
+          typeof expression === "string" ? expression : String(expression)
+        );
+      } catch {
+        return typeof expression === "string" ? expression : String(expression);
+      }
+    })(),
+    explanation,
+  });
+};
+
+// ---------------- Updated Equation Solver ----------------
 const solveEquation = async (formula, solution) => {
   solution.explanation =
     "This is an algebraic or transcendental equation. I will solve for the unknown variable by isolating it on one side.";
   try {
-    // Agar tenglamada ± bo‘lsa → ikkita variantga bo‘lib yuboramiz
+    // ± handling early, but now we'll produce full steps for both branches
     if (formula.includes("±")) {
       const plusVersion = formula.replace("±", "+");
       const minusVersion = formula.replace("±", "-");
+
+      addStep(
+        solution.steps,
+        "Handling ±",
+        `${plusVersion}  OR  ${minusVersion}`,
+        "Splitting ± into + and - to get two separate solutions."
+      );
 
       const plusSolution = await solveEquation(plusVersion, {
         ...solution,
@@ -130,6 +157,22 @@ const solveEquation = async (formula, solution) => {
         steps: [],
       });
 
+      // merge steps and answers (prefix branch name in steps)
+      addStep(
+        solution.steps,
+        "Plus branch steps",
+        plusSolution.steps
+          .map((s) => `${s.step}. ${s.description}: ${s.expression}`)
+          .join(" || ")
+      );
+      addStep(
+        solution.steps,
+        "Minus branch steps",
+        minusSolution.steps
+          .map((s) => `${s.step}. ${s.description}: ${s.expression}`)
+          .join(" || ")
+      );
+
       solution.finalAnswer = [
         ...plusSolution.finalAnswer,
         ...minusSolution.finalAnswer,
@@ -139,132 +182,289 @@ const solveEquation = async (formula, solution) => {
         ...minusSolution.finalAnswerLatex,
       ];
 
-      solution.steps.push({
-        step: 1,
-        description: "Handling ±",
-        expression: `${plusVersion}  OR  ${minusVersion}`,
-        expressionLatex: `${toLatex(plusVersion)} \\; \\text{or} \\; ${toLatex(
-          minusVersion
-        )}`,
-        explanation: "Splitting ± into + and - to get two separate solutions.",
-      });
+      // push a summary step
+      addStep(
+        solution.steps,
+        "Final combined solutions",
+        solution.finalAnswer.join("  OR  "),
+        "Combined solutions from both ± branches."
+      );
+
+      // verification (call on combined answers)
+      solution.verification = verifyEquationSolution(
+        formula.split("=")[0].trim(),
+        formula.split("=")[1] ? formula.split("=")[1].trim() : "0",
+        solution.finalAnswer.map((a) => a.replace(/^x\s*=\s*/, "").trim())
+      );
 
       return solution;
     }
 
-    const [leftSide, rightSide] = formula.split("=").map((s) => s.trim());
+    const [leftSideRaw, rightSideRaw] = formula
+      .split("=")
+      .map((s) => (s || "").trim());
+    const leftSide = leftSideRaw || "";
+    const rightSide = rightSideRaw || "";
 
-    solution.steps.push({
-      step: 1,
-      description: "Original equation",
-      expression: `${leftSide} = ${rightSide}`,
-      expressionLatex: `${toLatex(leftSide)} = ${toLatex(rightSide)}`,
-      explanation: "Starting with the given equation.",
-    });
+    addStep(
+      solution.steps,
+      "Original equation",
+      `${leftSide} = ${rightSide}`,
+      "Starting with the given equation."
+    );
 
-    let answers = [];
+    // If pure linear or quadratic, try to show algebraic manipulation steps
+    // Attempt to use nerdamer steps where possible; else fallback to solution only but with clarifying steps
 
-    if (leftSide.startsWith("sin(")) {
-      const val = math.evaluate(rightSide);
-      answers.push(`x = asin(${val}) + 2kπ`);
-      answers.push(`x = π - asin(${val}) + 2kπ`);
-    } else if (leftSide.startsWith("cos(")) {
-      const val = math.evaluate(rightSide);
-      answers.push(`x = acos(${val}) + 2kπ`);
-      answers.push(`x = -acos(${val}) + 2kπ`);
-    } else if (leftSide.startsWith("tan(")) {
-      const val = math.evaluate(rightSide);
-      answers.push(`x = atan(${val}) + kπ`);
-    } else if (leftSide.startsWith("log(")) {
-      const val = math.evaluate(rightSide);
-      const base10 = Math.pow(10, val);
-      const naturalExp = Math.exp(val);
-      answers.push(`${base10}`);
-      answers.push(`e^${val}`);
-      answers.push(`${naturalExp}`);
-    } else {
+    // Common trig/log cases (produce steps)
+    if (
+      leftSide.startsWith("sin(") ||
+      leftSide.startsWith("cos(") ||
+      leftSide.startsWith("tan(")
+    ) {
+      addStep(
+        solution.steps,
+        "Identify trig equation",
+        `${leftSide} = ${rightSide}`,
+        "Recognize trigonometric form and apply inverse trig rules."
+      );
+      const val = (() => {
+        try {
+          return math.evaluate(rightSide);
+        } catch {
+          return rightSide;
+        }
+      })();
+
+      let answers = [];
+      if (leftSide.startsWith("sin(")) {
+        answers.push(`asin(${val}) + 2k*pi`);
+        answers.push(`pi - asin(${val}) + 2k*pi`);
+      } else if (leftSide.startsWith("cos(")) {
+        answers.push(`acos(${val}) + 2k*pi`);
+        answers.push(`-acos(${val}) + 2k*pi`);
+      } else if (leftSide.startsWith("tan(")) {
+        answers.push(`atan(${val}) + k*pi`);
+      }
+
+      addStep(
+        solution.steps,
+        "Apply inverse trig",
+        answers.join("  OR  "),
+        "Applied inverse trigonometric identities to isolate x."
+      );
+
+      solution.finalAnswer = answers.map((a) => `x = ${a}`);
+      solution.finalAnswerLatex = solution.finalAnswer.map((a) => toLatex(a));
+
+      solution.verification = verifyEquationSolution(
+        leftSide,
+        rightSide,
+        solution.finalAnswer.map((a) => a.replace(/^x\s*=\s*/, ""))
+      );
+
+      return solution;
+    }
+
+    // Special case: simple linear equation ax + b = c
+    // Try to parse coefficients for a common linear/quadratic friendly step-by-step
+    try {
+      // attempt to rearrange: bring all to left then factor if possible
+      const rearranged = `(${leftSide}) - (${rightSide})`;
+      addStep(
+        solution.steps,
+        "Rearrange to zero",
+        `${rearranged} = 0`,
+        "Bring all terms to the left-hand side."
+      );
+
+      // simplify expression using mathjs & nerdamer to show intermediate
+      const simplified = cleanOutput(simplify(parse(rearranged)).toString());
+      addStep(
+        solution.steps,
+        "Simplify LHS",
+        simplified,
+        "Simplify the left-hand side after moving terms."
+      );
+
+      // If it's polynomial, show factorization (nerdamer factor)
+      let answers = [];
+      try {
+        const fact = nerdamer(`factor(${simplified})`).toString();
+        if (fact && fact !== simplified) {
+          addStep(
+            solution.steps,
+            "Factor polynomial",
+            fact,
+            "Factor the polynomial to find roots."
+          );
+        }
+        // Solve using nerdamer solve
+        const nerdSolution = nerdamer(`solve(${simplified}, x)`).toString();
+        answers = nerdSolution
+          .replace(/^\[|\]$/g, "")
+          .split(",")
+          .map((s) => cleanOutput(s))
+          .filter((s) => s.length > 0);
+      } catch (innerErr) {
+        // fallback to direct solve
+        const nerdSolution2 = nerdamer(
+          `solve((${leftSide})-(${rightSide}), x)`
+        ).toString();
+        answers = nerdSolution2
+          .replace(/^\[|\]$/g, "")
+          .split(",")
+          .map((s) => cleanOutput(s))
+          .filter((s) => s.length > 0);
+      }
+
+      if (answers.length === 0) {
+        // fallback: use numeric solve for simple linear form ax+b=c
+        const numeric = (() => {
+          try {
+            const sol = nerdamer(
+              `solve((${leftSide})-(${rightSide}), x)`
+            ).toString();
+            return sol;
+          } catch (e) {
+            return null;
+          }
+        })();
+        if (numeric) {
+          answers = numeric
+            .replace(/^\[|\]$/g, "")
+            .split(",")
+            .map((s) => cleanOutput(s));
+        }
+      }
+
+      // Prepare final answers
+      solution.finalAnswer = answers.map((a) => `x = ${a}`);
+      solution.finalAnswerLatex = answers.map((a) => `x = ${toLatex(a)}`);
+
+      addStep(
+        solution.steps,
+        "Solve for x",
+        solution.finalAnswer.join("  OR  "),
+        "Compute roots/solutions from factorization or algebraic solve."
+      );
+
+      // verification step
+      solution.verification = verifyEquationSolution(
+        leftSide,
+        rightSide,
+        answers
+      );
+    } catch (error) {
+      // If any failure in algebraic detailed steps, still attempt a solve and report steps
+      addStep(
+        solution.steps,
+        "Algebraic solve fallback",
+        "Using nerdamer solve as fallback",
+        `Fallback due to: ${error.message}`
+      );
       const nerdSolution = nerdamer(
-        `solve(${leftSide}-(${rightSide}), x)`
+        `solve((${leftSide})-(${rightSide}), x)`
       ).toString();
-      answers = nerdSolution
+      const answers = nerdSolution
         .replace(/^\[|\]$/g, "")
         .split(",")
         .map((s) => cleanOutput(s))
         .filter((s) => s.length > 0);
+
+      solution.finalAnswer = answers.map((a) => `x = ${a}`);
+      solution.finalAnswerLatex = answers.map((a) => `x = ${toLatex(a)}`);
+      addStep(
+        solution.steps,
+        "Final (fallback) solution",
+        solution.finalAnswer.join("  OR  "),
+        "Final answers from fallback solver."
+      );
+      solution.verification = verifyEquationSolution(
+        leftSide,
+        rightSide,
+        answers
+      );
     }
-
-    solution.finalAnswer = answers.map((a) => `x = ${a}`);
-    solution.finalAnswerLatex = answers.map((a) => `x = ${toLatex(a)}`);
-
-    solution.steps.push({
-      step: 2,
-      description: "Solved equation",
-      expression: solution.finalAnswer.join(" or "),
-      expressionLatex: solution.finalAnswerLatex.join(" \\text{ or } "),
-      explanation:
-        "Isolated the variable using algebraic, logarithmic, or trigonometric rules.",
-    });
-
-    solution.verification = verifyEquationSolution(
-      leftSide,
-      rightSide,
-      answers
-    );
   } catch (error) {
     solution.steps.push({
-      step: 1,
+      step: solution.steps.length + 1,
       description: "Error",
       expression: formula,
       expressionLatex: formula,
       explanation: `Unable to process equation: ${error.message}`,
     });
-    solution.finalAnswer = "Error in processing";
-    solution.finalAnswerLatex = "Error in processing";
+    solution.finalAnswer = ["Error in processing"];
+    solution.finalAnswerLatex = ["Error in processing"];
   }
   return solution;
 };
 
-// ---------------- Expression Solver ----------------
+// ---------------- Updated Expression Evaluator ----------------
 const evaluateExpression = async (formula, solution) => {
   solution.explanation =
     "This is a mathematical expression. I will evaluate it step by step.";
+
   try {
-    solution.steps.push({
-      step: 1,
-      description: "Original expression",
-      expression: formula,
-      expressionLatex: toLatex(formula),
-      explanation: "Starting with the given mathematical expression.",
-    });
+    addStep(
+      solution.steps,
+      "Original expression",
+      formula,
+      "Starting with the given mathematical expression."
+    );
 
-    const expr = parse(formula);
-    const simplified = simplify(expr);
+    // Normalize
+    const normalized = parseInput(formula);
 
-    if (simplified.toString() !== formula) {
-      solution.steps.push({
-        step: 2,
-        description: "Simplified form",
-        expression: cleanOutput(simplified.toString()),
-        expressionLatex: toLatex(simplified.toString()),
-        explanation: "Simplifying the expression using algebraic rules.",
-      });
-    }
+    // Tokenize va bosqichma-bosqich yechish
+    let currentExpr = normalized;
 
-    const result = math.evaluate(formula);
-    solution.finalAnswer = cleanOutput(result.toString());
-    solution.finalAnswerLatex = toLatex(result.toString());
+    // MathJS bilan parse qilish
+    const node = math.parse(currentExpr);
 
-    solution.steps.push({
-      step: solution.steps.length + 1,
-      description: "Final calculation",
-      expression: `= ${solution.finalAnswer}`,
-      expressionLatex: `= ${solution.finalAnswerLatex}`,
-      explanation:
-        "Performing the final calculation to get the numerical result.",
-    });
+    // Recursive evaluator – bosqichma-bosqich yozib borish
+    const stepEval = (node) => {
+      if (node.type === "OperatorNode") {
+        const left = stepEval(node.args[0]);
+        const right = stepEval(node.args[1]);
+
+        // left va right qiymatlar bo'lsa amallarni bajarish
+        if (!isNaN(left) && !isNaN(right)) {
+          const before = `${left} ${node.op} ${right}`;
+          const after = math.evaluate(before);
+
+          addStep(
+            solution.steps,
+            `Evaluate ${node.op}`,
+            before + " = " + after,
+            `Perform ${node.op} operation.`
+          );
+          return after;
+        }
+      }
+      try {
+        return math.evaluate(node.toString());
+      } catch {
+        return node.toString();
+      }
+    };
+
+    const finalVal = stepEval(node);
+
+    // Yakuniy qiymat
+    solution.finalAnswer = String(finalVal);
+    solution.finalAnswerLatex = toLatex(solution.finalAnswer);
+
+    addStep(
+      solution.steps,
+      "Final answer",
+      `= ${solution.finalAnswer}`,
+      "Final computed result."
+    );
   } catch (error) {
     throw new Error(error.message);
   }
+
   return solution;
 };
 
