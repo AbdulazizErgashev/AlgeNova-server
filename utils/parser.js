@@ -6,16 +6,28 @@ export const parseInput = (input) => {
   let clean = input.trim();
 
   clean = clean
+    // LaTeX power: x^{2} → x**2
+    .replace(/([a-zA-Z0-9])\^\{([^}]+)\}/g, "$1**$2")
+    // Standalone caret: x^2 → x**2
     .replace(/\^/g, "**")
+    // Multiplication & division signs
     .replace(/÷/g, "/")
     .replace(/×/g, "*")
+    // Square root
     .replace(/\\sqrt\{([^}]+)\}/g, "sqrt($1)")
     .replace(/\\sqrt\s*\(/g, "sqrt(")
+    // Fractions
     .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, "($1)/($2)")
+    // Constants
     .replace(/\\pi/g, "pi")
     .replace(/∞/g, "Infinity")
+    // Remove empty braces: x{} → x
+    .replace(/\{\}/g, "")
+    // General braces {a+b} → (a+b)
     .replace(/\{([^}]+)\}/g, "($1)")
-    .replace(/\\pm/g, "±") // LaTeX \pm → ±
+    // Plus/minus
+    .replace(/\\pm/g, "±")
+    // Normalize spaces
     .replace(/\s+/g, " ");
 
   return clean;
