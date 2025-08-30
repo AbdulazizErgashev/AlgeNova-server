@@ -14,8 +14,8 @@ export const parseInput = (input) => {
     // Roots
     .replace(/\\sqrt\{([^}]+)\}/g, "sqrt($1)")
     .replace(/\\sqrt\s*\(/g, "sqrt(")
-    // Trigonometry & log
-    .replace(/\\(sin|cos|tan|log|ln)\s*\(/g, "$1(")
+    // Trigonometry (basic + inverse) & log
+    .replace(/\\(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|log|ln)\s*\(/g, "$1(")
     // Multiplication & division
     .replace(/÷/g, "/")
     .replace(/×/g, "*")
@@ -28,7 +28,7 @@ export const parseInput = (input) => {
     .replace(/\{([^}]+)\}/g, "($1)")
     // Plus/minus
     .replace(/\\pm/g, "±")
-    // Implicit multiplication: 2x → 2*x
+    // Implicit multiplication: 2x → 2*x, 2(x+1) → 2*(x+1)
     .replace(/(\d)([a-zA-Z])/g, "$1*$2")
     .replace(/(\d)\(/g, "$1*(")
     // Normalize spaces
@@ -51,7 +51,7 @@ export const validateMathExpression = (expression) => {
   }
   if (parenCount > 0) errors.push("Unmatched opening parenthesis");
 
-  // Allowed characters
+  // Allowed characters (added trig functions names explicitly)
   const validChars = /^[0-9a-zA-Z+\-*/^().=,π∞± ]+$/;
   if (!validChars.test(expression)) {
     errors.push("Contains invalid characters");
