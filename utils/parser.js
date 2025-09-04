@@ -6,16 +6,18 @@ export const parseInput = (input) => {
   let clean = input.trim();
 
   clean = clean
-    // Powers: x^{2} → x**2
-    .replace(/([a-zA-Z0-9])\^\{([^}]+)\}/g, "$1**$2")
-    .replace(/\^/g, "**")
+    // Powers: x^{2} → x^2 (nerdamer va mathjs uchun ^ ishlaydi)
+    .replace(/([a-zA-Z0-9])\^\{([^}]+)\}/g, "$1^$2")
     // Fractions
     .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, "($1)/($2)")
     // Roots
     .replace(/\\sqrt\{([^}]+)\}/g, "sqrt($1)")
     .replace(/\\sqrt\s*\(/g, "sqrt(")
     // Trigonometry (basic + inverse) & log
-    .replace(/\\(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|log|ln)\s*\(/g, "$1(")
+    .replace(
+      /\\(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|log|ln)\s*\(/g,
+      "$1("
+    )
     // Multiplication & division
     .replace(/÷/g, "/")
     .replace(/×/g, "*")
@@ -51,7 +53,7 @@ export const validateMathExpression = (expression) => {
   }
   if (parenCount > 0) errors.push("Unmatched opening parenthesis");
 
-  // Allowed characters (added trig functions names explicitly)
+  // Allowed characters
   const validChars = /^[0-9a-zA-Z+\-*/^().=,π∞± ]+$/;
   if (!validChars.test(expression)) {
     errors.push("Contains invalid characters");
